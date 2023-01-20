@@ -412,7 +412,7 @@ fsp_err_t R_CANFD_Close (can_ctrl_t * const p_api_ctrl)
     }
 
     /* Disable Global Error interrupt if the handler channel is being closed */
-    if (p_extend->global_err_channel == p_cfg->channel)
+    if (((canfd_extended_cfg_t *) p_cfg->p_extend)->global_err_channel == p_cfg->channel)
     {
         R_BSP_IrqDisable(p_cfg->error_irq);
     }
@@ -965,10 +965,10 @@ void canfd_error_isr (void)
         }
 
         /* Choose ctrl block for the selected global error handler channel. */
-        p_callback_ctrl = gp_ctrl[p_extend->global_err_channel];
+        p_callback_ctrl = gp_ctrl[((canfd_extended_cfg_t *) p_ctrl->p_cfg->p_extend)->global_err_channel];
 
         /* Set channel and context based on selected global error handler channel. */
-        args.channel   = p_extend->global_err_channel;
+        args.channel   = ((canfd_extended_cfg_t *) p_ctrl->p_cfg->p_extend)->global_err_channel;
         args.p_context = p_callback_ctrl->p_context;
     }
     else
