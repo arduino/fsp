@@ -257,16 +257,17 @@ fsp_err_t R_CANFD_Open (can_ctrl_t * const p_api_ctrl, can_cfg_t const * const p
             R_CANFD->CFDRFCC[i] = p_global_cfg->rx_fifo_config[i];
         }
 
-        R_BSP_IrqCfgEnable(VECTOR_NUMBER_CAN_RXF, p_global_cfg->rx_fifo_ipl, NULL);
+        R_BSP_IrqCfgEnable(p_cfg->rx_irq, p_global_cfg->rx_fifo_ipl, NULL);
+
 
         /* Set global error interrupts */
         R_CANFD->CFDGCTR = p_global_cfg->global_interrupts;
     }
 
-    if (CANFD_CFG_GLOBAL_ERROR_CH == channel)
+    if (p_extend->global_err_channel == channel)
     {
         /* Configure global error interrupt */
-        R_BSP_IrqCfgEnable(VECTOR_NUMBER_CAN_GLERR, p_global_cfg->global_err_ipl, NULL);
+        R_BSP_IrqCfgEnable(p_cfg->error_irq, p_global_cfg->global_err_ipl, NULL);
     }
 
     /* Track ctrl struct */
@@ -411,9 +412,9 @@ fsp_err_t R_CANFD_Close (can_ctrl_t * const p_api_ctrl)
     }
 
     /* Disable Global Error interrupt if the handler channel is being closed */
-    if (CANFD_CFG_GLOBAL_ERROR_CH == p_cfg->channel)
+    if (p_extend->global_err_channel == p_cfg->channel)
     {
-        R_BSP_IrqDisable(VECTOR_NUMBER_CAN_GLERR);
+        R_BSP_IrqDisable(p_cfg->error_irq);
     }
 
 #if !BSP_FEATURE_CANFD_LITE
@@ -427,7 +428,7 @@ fsp_err_t R_CANFD_Close (can_ctrl_t * const p_api_ctrl)
 #endif
     {
         /* Disable RX FIFO interrupt */
-        R_BSP_IrqDisable(VECTOR_NUMBER_CAN_RXF);
+        R_BSP_IrqDisable(p_cfg->rx_irq);
 
         /* Transition to Global Sleep */
         r_canfd_mode_transition(p_ctrl, CAN_OPERATION_MODE_GLOBAL_RESET);
@@ -943,7 +944,7 @@ void canfd_error_isr (void)
     can_callback_args_t     args = {0U};
     canfd_instance_ctrl_t * p_callback_ctrl;
 
-    if (VECTOR_NUMBER_CAN_GLERR == irq)
+    if (p_ctrl->p_cfg->error_irq == irq)
     {
         args.event = CAN_EVENT_ERR_GLOBAL;
 
@@ -964,10 +965,10 @@ void canfd_error_isr (void)
         }
 
         /* Choose ctrl block for the selected global error handler channel. */
-        p_callback_ctrl = gp_ctrl[CANFD_CFG_GLOBAL_ERROR_CH];
+        p_callback_ctrl = gp_ctrl[p_extend->global_err_channel];
 
         /* Set channel and context based on selected global error handler channel. */
-        args.channel   = CANFD_CFG_GLOBAL_ERROR_CH;
+        args.channel   = p_extend->global_err_channel;
         args.p_context = p_callback_ctrl->p_context;
     }
     else
@@ -1009,6 +1010,9 @@ void canfd_rx_fifo_isr (void)
     FSP_CONTEXT_SAVE
 
     can_callback_args_t args;
+    IRQn_Type irq = R_FSP_CurrentIrqGet();
+    canfd_instance_ctrl_t * p_ctrl = (canfd_instance_ctrl_t *) R_FSP_IsrContextGet(irq);
+
 
     /* Get lowest FIFO requesting interrupt */
     uint32_t fifo = __CLZ(__RBIT(R_CANFD->CFDRFISTS));
@@ -1041,7 +1045,7 @@ void canfd_rx_fifo_isr (void)
     if (!R_CANFD->CFDRFISTS)
     {
         /* Clear interrupt in NVIC if there are no pending RX FIFO IRQs */
-        R_BSP_IrqStatusClear(VECTOR_NUMBER_CAN_RXF);
+        R_BSP_IrqStatusClear(p_ctrl->p_cfg->rx_irq);
     }
 
     /* Restore context if RTOS is used */
