@@ -1200,7 +1200,9 @@ static void iic_master_err_master (iic_master_instance_ctrl_t * p_ctrl)
                                (uint8_t) (IIC_MASTER_TIMEOUT_MODE_SHORT ==
                                           ((iic_master_extended_cfg_t *) p_ctrl->p_cfg->p_extend)->timeout_mode);
         p_ctrl->p_reg->ICFER_b.TMOE = 1;
+        iic_master_abort_seq_master(p_ctrl, true);
 
+        iic_master_notify(p_ctrl, I2C_MASTER_EVENT_ABORTED);
         /* This interrupt will be fired again when wither stop condition is sent
          * or the hardware detects the line is stuck low causing a timeout */
     }
