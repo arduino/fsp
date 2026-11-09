@@ -941,15 +941,30 @@ void canfd_error_isr (void)
     IRQn_Type               irq    = R_FSP_CurrentIrqGet();
     canfd_instance_ctrl_t * p_ctrl = (canfd_instance_ctrl_t *) R_FSP_IsrContextGet(irq);
 
-    can_callback_args_t     args = {0U};
-    canfd_instance_ctrl_t * p_callback_ctrl;
+    canfd_extended_cfg_t * p_extend = (canfd_extended_cfg_t *) p_ctrl->p_cfg->p_extend;
+    uint32_t               channel  = p_ctrl->p_cfg->channel;
+    can_callback_args_t    args     = {0U};
 
-    if (p_ctrl->p_cfg->error_irq == irq)
+    /* This ISR is installed on the channel error interrupt, so always read and clear the channel error flags. The
+     * interrupt stays asserted while any of them is set: if they were left set, the ISR would run again as soon as
+     * it returned, forever. */
+    args.error = R_CANFD->CFDC[channel].ERFL & UINT16_MAX; // Upper halfword contains latest CRC
+    R_CANFD->CFDC[channel].ERFL = 0;
+
+    if (args.error)
+    {
+        args.event     = CAN_EVENT_ERR_CHANNEL;
+        args.channel   = channel;
+        args.p_context = p_ctrl->p_context;
+        args.buffer    = 0U;
+        r_canfd_call_callback(p_ctrl, &args);
+    }
+
+    /* If this channel is the global error handler channel, also report and clear the global error flags. */
+    uint32_t cfdgerfl = R_CANFD->CFDGERFL;
+    if ((p_extend->global_err_channel == channel) && cfdgerfl)
     {
         args.event = CAN_EVENT_ERR_GLOBAL;
-
-        /* Read global error flags. */
-        uint32_t cfdgerfl = R_CANFD->CFDGERFL;
 
         /* Global errors are in the top halfword of canfd_error_t; move and preserve ECC error flags. */
         args.error = ((cfdgerfl & UINT16_MAX) << 16) + ((cfdgerfl >> 16) << 28);
@@ -957,6 +972,7 @@ void canfd_error_isr (void)
         /* Clear global error flags. */
         R_CANFD->CFDGERFL = 0;
 
+        args.buffer = 0U;
         if (args.error & CANFD_ERROR_GLOBAL_MESSAGE_LOST)
         {
             /* Get lowest RX FIFO with Message Lost condition and clear the flag */
@@ -964,32 +980,10 @@ void canfd_error_isr (void)
             R_CANFD->CFDRFSTS[args.buffer] &= ~R_CANFD_CFDRFSTS_RFMLT_Msk;
         }
 
-        /* Choose ctrl block for the selected global error handler channel. */
-        p_callback_ctrl = gp_ctrl[((canfd_extended_cfg_t *) p_ctrl->p_cfg->p_extend)->global_err_channel];
-
-        /* Set channel and context based on selected global error handler channel. */
-        args.channel   = ((canfd_extended_cfg_t *) p_ctrl->p_cfg->p_extend)->global_err_channel;
-        args.p_context = p_callback_ctrl->p_context;
-    }
-    else
-    {
-        args.event = CAN_EVENT_ERR_CHANNEL;
-
-        /* Read and clear channel error flags. */
-        uint32_t channel = p_ctrl->p_cfg->channel;
-        args.error = R_CANFD->CFDC[channel].ERFL & UINT16_MAX; // Upper halfword contains latest CRC
-        R_CANFD->CFDC[channel].ERFL = 0;
-
-        /* Choose the channel provided by the interrupt context. */
-        p_callback_ctrl = p_ctrl;
-
         args.channel   = channel;
         args.p_context = p_ctrl->p_context;
-        args.buffer    = 0U;
+        r_canfd_call_callback(p_ctrl, &args);
     }
-
-    /* Set remaining arguments and call callback */
-    r_canfd_call_callback(p_callback_ctrl, &args);
 
     /* Clear IRQ */
     R_BSP_IrqStatusClear(irq);
