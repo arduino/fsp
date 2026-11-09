@@ -506,7 +506,7 @@ fsp_err_t R_CANFD_Write (can_ctrl_t * const p_api_ctrl, uint32_t buffer, can_fra
     uint32_t txmb = buffer + (p_ctrl->p_cfg->channel * CANFD_PRV_TXMB_CHANNEL_OFFSET);
 
     /* Ensure MB is ready */
-    FSP_ERROR_RETURN(0U == R_CANFD->CFDTMSTS_b[txmb].TMTSTS, FSP_ERR_CAN_TRANSMIT_NOT_READY);
+    FSP_ERROR_RETURN(0U == R_CANFD->CFDTMSTS_b[txmb].TMTRM, FSP_ERR_CAN_TRANSMIT_NOT_READY);
 
     /* Set ID */
     R_CANFD->CFDTM[txmb].ID = p_frame->id | ((uint32_t) p_frame->type << R_CANFD_CFDTM_ID_TMRTR_Pos) |
